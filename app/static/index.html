@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LedgerGuard</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--ink:#14161f;--mute:#5f6577;--line:#e3e6ef;--acc:#4f46e5;--ok:#0f9d58;--bad:#d93025}
+@media(prefers-color-scheme:dark){:root{--bg:#0f1117;--card:#181b25;--ink:#eceef6;--mute:#9aa1b5;--line:#272b3a;--acc:#8b86ff;--ok:#3ddc84;--bad:#ff6b6b}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,sans-serif}
+main{max-width:980px;margin:0 auto;padding:28px 18px 60px}h1{margin:0;font-size:26px}p.sub{color:var(--mute);margin:4px 0 20px}
+.bar{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:20px}
+input{width:110px;padding:9px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+button{background:var(--acc);color:#fff;border:0;padding:10px 18px;border-radius:8px;font-weight:600;cursor:pointer}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 16px}
+.k{color:var(--mute);font-size:12px;text-transform:uppercase;letter-spacing:.04em}.v{font-size:26px;font-weight:700;margin-top:2px}
+.ok{color:var(--ok)}.bad{color:var(--bad)}h2{font-size:16px;margin:26px 0 10px}
+table{width:100%;border-collapse:collapse;background:var(--card);border:1px solid var(--line);border-radius:12px;overflow:hidden}
+th,td{padding:9px 12px;text-align:right;border-bottom:1px solid var(--line)}th:first-child,td:first-child{text-align:left}th{color:var(--mute);font-weight:600;font-size:13px}
+.wrap{overflow-x:auto}.note{color:var(--mute);font-size:13px;margin-top:8px}
+</style></head><body><main>
+<h1>LedgerGuard</h1><p class="sub">Payment ledger &amp; reconciliation engine, tested against injected failures with known ground truth.</p>
+<div class="bar"><label>Payments <input id="n" type="number" value="2000" min="100" max="10000"></label>
+<button id="go">Run chaos simulation</button><span id="st" class="note"></span></div>
+<div id="out"></div>
+<script>
+const $=id=>document.getElementById(id),pct=x=>(x*100).toFixed(2)+'%';
+const card=(k,v,c='')=>`<div class="card"><div class="k">${k}</div><div class="v ${c}">${v}</div></div>`;
+$('go').onclick=async()=>{$('st').textContent='Running…';
+ const d=await (await fetch('/api/simulate?n='+$('n').value)).json();const p=d.park,r=d.reject;
+ const viol=p.invariant_violations.length+r.invariant_violations.length;
+ const tiers=Object.entries(p.matching.tiers).map(([t,x])=>`<tr><td>${t}</td><td>${x.count}</td><td>${x.correct}</td><td>${t==='review'?'human':pct(x.correct/x.count)}</td></tr>`).join('');
+ $('out').innerHTML=`<div class="grid">
+ ${card('Payments',p.payments)}${card('Invariant violations',viol,viol?'bad':'ok')}
+ ${card('Match precision',pct(p.matching.precision))}${card('Match recall',pct(p.matching.recall))}
+ ${card('Bank credits solved',p.bank_credits.matched_exact+' / '+p.bank_credits.total)}
+ ${card('Duplicate creates blocked',p.duplicate_creates_blocked)}</div>
+ <h2>Out-of-order webhook policy</h2><div class="wrap"><table><tr><th>Policy</th><th>Correct state (live)</th><th>After reconciliation</th><th>Auto-fixes needed</th></tr>
+ <tr><td>reject</td><td>${pct(r.state_accuracy_before)}</td><td>${pct(r.state_accuracy_after)}</td><td>${r.resolution.auto_fixed_states}</td></tr>
+ <tr><td>park &amp; replay</td><td>${pct(p.state_accuracy_before)}</td><td>${pct(p.state_accuracy_after)}</td><td>${p.resolution.auto_fixed_states}</td></tr></table></div>
+ <p class="note">Parking reorders events instead of dropping them, so fewer payments need repair downstream.</p>
+ <h2>Settlement matcher by tier</h2><div class="wrap"><table><tr><th>Tier</th><th>Matches</th><th>Correct</th><th>Precision</th></tr>${tiers}</table></div>
+ <p class="note">“review” = ambiguous matches deliberately not auto-applied.</p>`;$('st').textContent='';};
+$('go').click();
+</script></main></body></html>
